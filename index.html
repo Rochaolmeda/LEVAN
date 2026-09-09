@@ -1,1 +1,848 @@
-https://github.com/Rochaolmeda/Javi-App.git
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Control de Pedidos - LEVAN</title>
+  <!-- Bootstrap 5 CSS & Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-pendiente: #6c757d;
+      --bg-proceso: #fd7e14;
+      --bg-listo: #198754;
+      --bg-entregado: #0d6efd;
+    }
+    body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .header-panel { background: #2c3e50; color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+    .summary-card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .kanban-col { background: #e9ecef; border-radius: 8px; padding: 12px; min-height: 500px; }
+    .kanban-header { font-weight: bold; color: white; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
+    .header-pendiente { background-color: var(--bg-pendiente); }
+    .header-proceso { background-color: var(--bg-proceso); }
+    .header-listo { background-color: var(--bg-listo); }
+    .header-entregado { background-color: var(--bg-entregado); }
+    
+    .comanda-card {
+      background: white; border-left: 5px solid #ccc; border-radius: 6px;
+      padding: 12px; margin-bottom: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+      cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .comanda-card:hover { transform: translateY(-3px); box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
+    .comanda-card.status-Pendiente { border-left-color: var(--bg-pendiente); }
+    .comanda-card.status-En-Proceso { border-left-color: var(--bg-proceso); }
+    .comanda-card.status-Listo { border-left-color: var(--bg-listo); }
+    .comanda-card.status-Entregado { border-left-color: var(--bg-entregado); }
+    
+    .badge-paid { background-color: #d1e7dd; color: #0f5132; }
+    .badge-unpaid { background-color: #f8d7da; color: #842029; }
+    .table-sm-custom td { padding: 3px; font-size: 0.85rem; }
+    .nav-tabs .nav-link { font-weight: 600; color: #495057; }
+    .nav-tabs .nav-link.active { color: #0d6efd; border-bottom: 3px solid #0d6efd; font-weight: 700; }
+  </style>
+</head>
+<body>
+
+<div class="container-fluid py-3">
+  <!-- ENCABEZADO PRINCIPAL -->
+  <div class="header-panel d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="m-0"><i class="bi bi-shop"></i> Control de Pedidos - LEVAN</h2>
+      <small>Sistema Web de Gestión de Producción y Venta</small>
+    </div>
+    <button type="button" class="btn btn-success btn-lg" onclick="abrirModalNuevoPedido()">
+      <i class="bi bi-plus-circle"></i> Agregar Pedido
+    </button>
+  </div>
+
+  <!-- NAVEGACIÓN DE PESTAÑAS (Vistas Separadas) -->
+  <ul class="nav nav-tabs mb-4" id="mainTab" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="kanban-tab" data-bs-toggle="tab" data-bs-target="#tab-kanban" type="button" role="tab" aria-controls="tab-kanban" aria-selected="true">
+        <i class="bi bi-kanban"></i> Tablero Kanban
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="requerimientos-tab" data-bs-toggle="tab" data-bs-target="#tab-requerimientos" type="button" role="tab" aria-controls="tab-requerimientos" aria-selected="false" onclick="inicializarVistaRequerimientos()">
+        <i class="bi bi-calendar-range"></i> Requerimiento por Periodo
+      </button>
+    </li>
+  </ul>
+
+  <!-- CONTENIDO DE VISTAS -->
+  <div class="tab-content" id="mainTabContent">
+
+    <!-- ================= VISTA 1: TABLERO KANBAN ================= -->
+    <div class="tab-pane fade show active" id="tab-kanban" role="tabpanel" aria-labelledby="kanban-tab">
+      
+      <!-- Resumen de Producción Activa -->
+      <div class="mb-3">
+        <h6 class="fw-bold text-dark mb-2"><i class="bi bi-card-checklist"></i> Resumen General de Producción Activa:</h6>
+        <div class="row" id="panelResumen"></div>
+      </div>
+
+      <!-- Filtros Kanban -->
+      <div class="summary-card mb-4">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label fw-bold">Buscar Cliente:</label>
+            <input type="text" id="filtroCliente" class="form-control" placeholder="Nombre cliente..." oninput="filtrarTablero()">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-bold">Vendedor:</label>
+            <select id="filtroVendedor" class="form-select" onchange="filtrarTablero()">
+              <option value="">-- Todos --</option>
+              <option value="Genesis">Genesis</option>
+              <option value="Sandra">Sandra</option>
+              <option value="Gerardo">Gerardo</option>
+              <option value="Javier">Javier</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-bold">Estatus Pedido:</label>
+            <select id="filtroEstatus" class="form-select" onchange="filtrarTablero()">
+              <option value="">-- Todos --</option>
+              <option value="Pendiente">Pendiente</option>
+              <option value="En Proceso">En Proceso</option>
+              <option value="Listo">Listo / Hecho</option>
+              <option value="Entregado">Entregado</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Columnas Kanban -->
+      <div class="row">
+        <div class="col-md-3">
+          <div class="kanban-col">
+            <div class="kanban-header header-pendiente d-flex justify-content-between">
+              <span><i class="bi bi-clock"></i> Pendiente</span>
+              <span id="cant-Pendiente" class="badge bg-light text-dark">0</span>
+            </div>
+            <div id="container-Pendiente"></div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="kanban-col">
+            <div class="kanban-header header-proceso d-flex justify-content-between">
+              <span><i class="bi bi-gear-wide-connected"></i> En Proceso</span>
+              <span id="cant-En-Proceso" class="badge bg-light text-dark">0</span>
+            </div>
+            <div id="container-En-Proceso"></div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="kanban-col">
+            <div class="kanban-header header-listo d-flex justify-content-between">
+              <span><i class="bi bi-check-circle"></i> Listo / Hecho</span>
+              <span id="cant-Listo" class="badge bg-light text-dark">0</span>
+            </div>
+            <div id="container-Listo"></div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="kanban-col">
+            <div class="kanban-header header-entregado d-flex justify-content-between">
+              <span><i class="bi bi-box-seam"></i> Entregado</span>
+              <span id="cant-Entregado" class="badge bg-light text-dark">0</span>
+            </div>
+            <div id="container-Entregado"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================= VISTA 2: REQUERIMIENTO POR PERIODO ================= -->
+    <div class="tab-pane fade" id="tab-requerimientos" role="tabpanel" aria-labelledby="requerimientos-tab">
+      
+      <!-- Contenedor 1: Tabla Matriz de Productos -->
+      <div class="summary-card mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h4 class="m-0 fw-bold text-dark"><i class="bi bi-calendar-week"></i> Plan de Producción por Periodo</h4>
+          <span class="badge bg-primary fs-6">Consolidado por Fecha de Entrega</span>
+        </div>
+
+        <!-- Filtros de Rango de Fechas -->
+        <div class="row g-3 align-items-end mb-4">
+          <div class="col-md-3">
+            <label class="form-label fw-bold">Inicio (Fecha Entrega):</label>
+            <input type="date" id="reqFechaInicio" class="form-control">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-bold">Fin (Fecha Entrega):</label>
+            <input type="date" id="reqFechaFin" class="form-control">
+          </div>
+          <div class="col-md-3">
+            <button type="button" class="btn btn-primary w-100 fw-bold" onclick="consultarRequerimientos()">
+              <i class="bi bi-search"></i> Consultar Reporte
+            </button>
+          </div>
+          <div class="col-md-3">
+            <div class="btn-group w-100" role="group">
+              <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setRangoRapido('hoy')">Hoy</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setRangoRapido('7dias')">7 Días</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setRangoRapido('15dias')">15 Días</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabla Matriz Consolidada -->
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover align-middle text-center" id="tablaRequerimientos">
+            <thead class="table-dark" id="theadRequerimientos">
+              <tr>
+                <th>Producto</th>
+                <th>Sin Datos</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyRequerimientos">
+              <tr>
+                <td colspan="2" class="text-muted">Seleccione un rango de fechas y presione 'Consultar Reporte'.</td>
+              </tr>
+            </tbody>
+            <tfoot class="table-light fw-bold" id="tfootRequerimientos"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Contenedor 2: Comandas Programadas por Día (Editable) -->
+      <div class="summary-card">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="m-0 fw-bold text-dark"><i class="bi bi-receipt-cutoff"></i> Comandas Programadas por Día</h5>
+          <small class="text-muted">Haga clic sobre cualquier comanda para editar sus datos o productos</small>
+        </div>
+
+        <div id="gridComandasPeriodo" class="row g-3 overflow-auto flex-nowrap pb-3" style="min-height: 250px;">
+          <div class="col-12 text-muted text-center py-4">
+            Seleccione un rango de fechas y presione 'Consultar Reporte' para cargar las comandas.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- ================= MODAL REGISTRO / EDICIÓN ================= -->
+<div class="modal fade" id="modalPedido" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title" id="modalTitulo">Pedidos de Venta</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="formPedido">
+          <input type="hidden" id="editNoPedido">
+          
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Vendedor *</label>
+              <select id="pedVendedor" class="form-select" required>
+                <option value="Genesis">Genesis</option>
+                <option value="Sandra">Sandra</option>
+                <option value="Gerardo">Gerardo</option>
+                <option value="Javier">Javier</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Cliente *</label>
+              <input type="text" id="pedCliente" class="form-control" required placeholder="Nombre del cliente">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Fecha de Entrega *</label>
+              <input type="date" id="pedFechaEntrega" class="form-control" required>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="fw-bold m-0">Detalle del Pedido</h6>
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="agregarLineaProducto()">
+              <i class="bi bi-plus"></i> Agregar Producto
+            </button>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-bordered align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th style="width: 40%;">Producto</th>
+                  <th style="width: 15%;">Cant.</th>
+                  <th style="width: 20%;">Precio ($)</th>
+                  <th style="width: 20%;">Total ($)</th>
+                  <th style="width: 5%;"></th>
+                </tr>
+              </thead>
+              <tbody id="tbodyItems"></tbody>
+              <tfoot>
+                <tr class="fw-bold table-light">
+                  <td colspan="3" class="text-end">Monto Total Pedido:</td>
+                  <td id="lblTotalGeneral">$0.00</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Estatus Pedido</label>
+              <select id="pedEstatus" class="form-select">
+                <option value="Pendiente">Pendiente</option>
+                <option value="En Proceso">En Proceso</option>
+                <option value="Listo">Listo / Hecho</option>
+                <option value="Entregado">Entregado</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Tipo de Pago</label>
+              <select id="pedTipoPago" class="form-select">
+                <option value="Efectivo">Efectivo</option>
+                <option value="Transferencia">Transferencia</option>
+                <option value="Deposito">Deposito</option>
+              </select>
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="pedPagado">
+                <label class="form-check-label fw-bold" for="pedPagado">¿Pagado?</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold">Comentarios</label>
+            <textarea id="pedComentarios" class="form-control" rows="2"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" id="btnGuardar" class="btn btn-primary" onclick="guardarFormularioPedido()">
+          <i class="bi bi-save"></i> Guardar Pedido
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- JS BOOTSTRAP -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+  let DB = { pedidos: [], listaPrecios: {} };
+  const NOMBRES_DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+  document.addEventListener("DOMContentLoaded", () => {
+    cargarDatosServidor();
+  });
+
+  function cargarDatosServidor() {
+    google.script.run
+      .withSuccessHandler(res => {
+        if (res) {
+          DB = res;
+          renderizarTablero();
+          renderizarResumen();
+          
+          // Re-consultar requerimientos si la pestaña está activa o tiene fechas
+          const inicio = document.getElementById('reqFechaInicio').value;
+          const fin = document.getElementById('reqFechaFin').value;
+          if (inicio && fin) {
+            consultarRequerimientos();
+          }
+        }
+      })
+      .withFailureHandler(err => {
+        console.error("Error al obtener datos:", err);
+      })
+      .getInitialData();
+  }
+
+  function getPedidosAgrupados() {
+    const mapa = {};
+    (DB.pedidos || []).forEach(p => {
+      const key = p.noPedido;
+      if (!mapa[key]) {
+        mapa[key] = {
+          noPedido: p.noPedido,
+          vendedor: p.vendedor,
+          cliente: p.cliente,
+          comentarios: p.comentarios,
+          estatus: p.estatus || 'Pendiente',
+          pagado: p.pagado,
+          tipoPago: p.tipoPago,
+          fechaSolicitud: p.fechaSolicitud,
+          fechaEntrega: p.fechaEntrega || 'Sin fecha',
+          items: []
+        };
+      }
+      mapa[key].items.push({
+        producto: p.producto,
+        cantidad: p.cantidad,
+        precio: p.precio,
+        total: p.cantidad * p.precio
+      });
+    });
+    return Object.values(mapa);
+  }
+
+  /* ================= LÓGICA VISTA 1: TABLERO KANBAN ================= */
+  function renderizarResumen() {
+    const pedidos = getPedidosAgrupados();
+    const estatusValidos = ['Pendiente', 'En Proceso', 'Listo'];
+    const pedidosFiltrados = pedidos.filter(p => estatusValidos.includes(p.estatus));
+    
+    const inventario = {};
+    pedidosFiltrados.forEach(p => {
+      p.items.forEach(i => {
+        if (i.producto) {
+          inventario[i.producto] = (inventario[i.producto] || 0) + i.cantidad;
+        }
+      });
+    });
+
+    let html = '';
+    for (const [prod, cant] of Object.entries(inventario)) {
+      html += `
+        <div class="col-md-2 col-sm-4 mb-2">
+          <div class="summary-card text-center border-start border-4 border-warning">
+            <small class="text-muted text-truncate d-block fw-bold">${prod}</small>
+            <span class="fs-5 fw-bold text-dark">${cant} pz</span>
+          </div>
+        </div>
+      `;
+    }
+    document.getElementById('panelResumen').innerHTML = html || '<div class="col-12 text-muted px-3">No hay productos pendientes en producción.</div>';
+  }
+
+  function renderizarTablero() {
+    ['Pendiente', 'En Proceso', 'Listo', 'Entregado'].forEach(c => {
+      const key = c.replace(/\s+/g, "-");
+      const elCont = document.getElementById(`container-${key}`);
+      const elCant = document.getElementById(`cant-${key}`);
+      if (elCont) elCont.innerHTML = '';
+      if (elCant) elCant.innerText = '0';
+    });
+
+    const pedidos = getPedidosAgrupados();
+    const fCliente = (document.getElementById('filtroCliente').value || '').toLowerCase();
+    const fVendedor = document.getElementById('filtroVendedor').value;
+    const fEstatus = document.getElementById('filtroEstatus').value;
+
+    const contadores = { 'Pendiente': 0, 'En Proceso': 0, 'Listo': 0, 'Entregado': 0 };
+
+    pedidos.forEach(p => {
+      if (fCliente && !p.cliente.toLowerCase().includes(fCliente)) return;
+      if (fVendedor && p.vendedor !== fVendedor) return;
+      if (fEstatus && p.estatus !== fEstatus) return;
+
+      const estatusClave = contadores[p.estatus] !== undefined ? p.estatus : 'Pendiente';
+      contadores[estatusClave]++;
+
+      const totalPedido = p.items.reduce((sum, item) => sum + item.total, 0);
+      const isPaid = (p.pagado || '').toString().toLowerCase() === 'si';
+
+      const cardHtml = `
+        <div class="comanda-card status-${estatusClave.replace(/\s+/g, "-")}" onclick="editarPedido(${p.noPedido})">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="fw-bold">#${p.noPedido}</span>
+            <span class="badge ${isPaid ? 'badge-paid' : 'badge-unpaid'}">
+              ${isPaid ? 'Pagado (' + (p.tipoPago || 'OK') + ')' : 'Pendiente Pago'}
+            </span>
+          </div>
+          <div class="fw-bold text-dark mb-1"><i class="bi bi-person"></i> ${p.cliente}</div>
+          <small class="text-muted d-block mb-1"><i class="bi bi-person-badge"></i> Vend: ${p.vendedor}</small>
+          <small class="badge bg-warning text-dark d-inline-block mb-2"><i class="bi bi-calendar-event"></i> Entrega: ${p.fechaEntrega}</small>
+          
+          <table class="table table-sm-custom table-borderless mb-2">
+            ${p.items.map(i => `
+              <tr>
+                <td>${i.cantidad}x ${i.producto}</td>
+                <td class="text-end">$${i.total.toFixed(2)}</td>
+              </tr>
+            `).join('')}
+          </table>
+
+          <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+            <small class="text-muted">${p.fechaSolicitud}</small>
+            <strong class="text-success">$${totalPedido.toFixed(2)}</strong>
+          </div>
+        </div>
+      `;
+
+      const targetCol = document.getElementById(`container-${estatusClave.replace(/\s+/g, "-")}`);
+      if (targetCol) targetCol.innerHTML += cardHtml;
+    });
+
+    for (const [est, cant] of Object.entries(contadores)) {
+      const el = document.getElementById(`cant-${est.replace(/\s+/g, "-")}`);
+      if (el) el.innerText = cant;
+    }
+  }
+
+  function filtrarTablero() { renderizarTablero(); }
+
+  /* ================= LÓGICA VISTA 2: REQUERIMIENTO POR PERIODO ================= */
+  function inicializarVistaRequerimientos() {
+    if (!document.getElementById('reqFechaInicio').value) {
+      setRangoRapido('7dias');
+    }
+  }
+
+  function setRangoRapido(tipo) {
+    const hoy = new Date();
+    const fin = new Date();
+
+    if (tipo === 'hoy') {
+      // Mismo día
+    } else if (tipo === '7dias') {
+      fin.setDate(hoy.getDate() + 6);
+    } else if (tipo === '15dias') {
+      fin.setDate(hoy.getDate() + 14);
+    }
+
+    document.getElementById('reqFechaInicio').value = hoy.toISOString().split('T')[0];
+    document.getElementById('reqFechaFin').value = fin.toISOString().split('T')[0];
+    consultarRequerimientos();
+  }
+
+  function consultarRequerimientos() {
+    const inicio = document.getElementById('reqFechaInicio').value;
+    const fin = document.getElementById('reqFechaFin').value;
+
+    if (!inicio || !fin) {
+      alert("Seleccione las fechas de inicio y fin.");
+      return;
+    }
+
+    if (new Date(inicio) > new Date(fin)) {
+      alert("La fecha de inicio no puede ser posterior a la fecha final.");
+      return;
+    }
+
+    const tbody = document.getElementById('tbodyRequerimientos');
+    const gridComandas = document.getElementById('gridComandasPeriodo');
+    tbody.innerHTML = '<tr><td colspan="100"><div class="spinner-border spinner-border-sm text-primary"></div> Consultando requerimientos de producción...</td></tr>';
+    gridComandas.innerHTML = '<div class="col-12 text-muted text-center py-4"><div class="spinner-border spinner-border-sm text-primary"></div> Cargando comandas programadas...</div>';
+
+    google.script.run
+      .withSuccessHandler(renderizarTablaRequerimientos)
+      .withFailureHandler(err => {
+        tbody.innerHTML = `<tr><td colspan="100" class="text-danger">Error: ${err.message}</td></tr>`;
+        gridComandas.innerHTML = `<div class="col-12 text-danger text-center py-4">Error: ${err.message}</div>`;
+      })
+      .getRequerimientosPorPeriodo(inicio, fin);
+  }
+
+  function renderizarTablaRequerimientos(res) {
+    const thead = document.getElementById('theadRequerimientos');
+    const tbody = document.getElementById('tbodyRequerimientos');
+    const tfoot = document.getElementById('tfootRequerimientos');
+
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+    tfoot.innerHTML = '';
+
+    const { dias, matriz, comandasPorDia } = res;
+
+    if (!dias || dias.length === 0) {
+      tbody.innerHTML = '<tr><td class="text-muted">No existen días válidos en el rango seleccionado.</td></tr>';
+      document.getElementById('gridComandasPeriodo').innerHTML = '<div class="col-12 text-muted text-center py-3">Sin datos.</div>';
+      return;
+    }
+
+    // 1. Dibuja Encabezados de la Tabla Matriz con Nombre del Día de la Semana
+    let headHtml = '<tr><th class="text-start">Producto</th>';
+    dias.forEach(dStr => {
+      const [year, month, day] = dStr.split('-').map(Number);
+      const fechaObj = new Date(year, month - 1, day);
+      const nombreDia = NOMBRES_DIAS[fechaObj.getDay()];
+
+      headHtml += `
+        <th class="text-center">
+          <span class="d-block fw-bold fs-6 text-warning">${nombreDia}</span>
+          <small class="fw-normal text-light">${dStr}</small>
+        </th>`;
+    });
+    headHtml += '<th class="text-center bg-secondary">Total Periodo</th></tr>';
+    thead.innerHTML = headHtml;
+
+    // 2. Dibuja Filas por Producto
+    const productos = Object.keys(matriz).sort();
+    if (productos.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="${dias.length + 2}" class="text-muted p-4"><i class="bi bi-info-circle fs-4 d-block mb-2"></i>No hay pedidos en estado Pendiente, En Proceso o Listo para este periodo.</td></tr>`;
+    } else {
+      const totalesPorDia = new Array(dias.length).fill(0);
+      let granTotal = 0;
+
+      productos.forEach(prod => {
+        let rowHtml = `<tr><td class="text-start fw-bold">${prod}</td>`;
+        let totalProducto = 0;
+
+        dias.forEach((d, i) => {
+          const cant = matriz[prod][d] || 0;
+          totalProducto += cant;
+          totalesPorDia[i] += cant;
+          rowHtml += `<td class="text-center">${cant > 0 ? `<span class="badge bg-primary fs-6">${cant}</span>` : '<span class="text-muted">-</span>'}</td>`;
+        });
+
+        granTotal += totalProducto;
+        rowHtml += `<td class="text-center fw-bold bg-light fs-6">${totalProducto} pz</td></tr>`;
+        tbody.innerHTML += rowHtml;
+      });
+
+      // Pie de Tabla
+      let footHtml = '<tr><td class="text-start fw-bold">Total por Día</td>';
+      totalesPorDia.forEach(tot => {
+        footHtml += `<td class="text-center">${tot > 0 ? `<span class="badge bg-dark fs-6">${tot}</span>` : '0'}</td>`;
+      });
+      footHtml += `<td class="text-center bg-warning text-dark fw-bold fs-6">${granTotal} pz</td></tr>`;
+      tfoot.innerHTML = footHtml;
+    }
+
+    // 3. Dibuja la Sección Inferior de Comandas por Día
+    renderizarComandasPorDia(dias, comandasPorDia);
+  }
+
+  function renderizarComandasPorDia(dias, comandasPorDia) {
+    const gridComandas = document.getElementById('gridComandasPeriodo');
+    gridComandas.innerHTML = '';
+
+    dias.forEach(dStr => {
+      const [year, month, day] = dStr.split('-').map(Number);
+      const fechaObj = new Date(year, month - 1, day);
+      const nombreDia = NOMBRES_DIAS[fechaObj.getDay()];
+      const listaComandas = comandasPorDia[dStr] || [];
+
+      let colHtml = `
+        <div class="col-md-4 col-lg-3" style="min-width: 280px;">
+          <div class="bg-light p-2 rounded border h-100">
+            <div class="bg-dark text-white p-2 rounded mb-2 text-center">
+              <span class="fw-bold d-block text-warning">${nombreDia}</span>
+              <small class="text-light">${dStr}</small>
+              <span class="badge bg-secondary ms-1">${listaComandas.length} pedidos</span>
+            </div>
+            <div class="comandas-list" style="max-height: 550px; overflow-y: auto;">
+      `;
+
+      if (listaComandas.length === 0) {
+        colHtml += '<div class="text-muted text-center py-3 small"><i class="bi bi-calendar-x"></i> Sin comandas</div>';
+      } else {
+        listaComandas.forEach(p => {
+          const totalPedido = p.items.reduce((sum, item) => sum + item.total, 0);
+          const isPaid = (p.pagado || '').toString().toLowerCase() === 'si';
+          const estatusClave = (p.estatus || 'Pendiente').replace(/\s+/g, "-");
+
+          colHtml += `
+            <div class="comanda-card status-${estatusClave}" onclick="editarPedido(${p.noPedido})" title="Clic para editar el pedido #${p.noPedido}">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="fw-bold">#${p.noPedido}</span>
+                <span class="badge ${isPaid ? 'badge-paid' : 'badge-unpaid'}">
+                  ${isPaid ? 'Pagado' : 'Pendiente'}
+                </span>
+              </div>
+              <div class="fw-bold text-dark mb-1"><i class="bi bi-person"></i> ${p.cliente}</div>
+              <small class="text-muted d-block mb-1"><i class="bi bi-person-badge"></i> Vend: ${p.vendedor}</small>
+              
+              <table class="table table-sm-custom table-borderless mb-2">
+                ${p.items.map(i => `
+                  <tr>
+                    <td>${i.cantidad}x ${i.producto}</td>
+                    <td class="text-end">$${i.total.toFixed(2)}</td>
+                  </tr>
+                `).join('')}
+              </table>
+
+              <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+                <span class="badge bg-secondary">${p.estatus}</span>
+                <strong class="text-success">$${totalPedido.toFixed(2)}</strong>
+              </div>
+            </div>
+          `;
+        });
+      }
+
+      colHtml += `
+            </div>
+          </div>
+        </div>
+      `;
+      gridComandas.innerHTML += colHtml;
+    });
+  }
+
+  /* ================= MODAL & FORMULARIO DE EDICIÓN ================= */
+  function abrirModalNuevoPedido() {
+    document.getElementById('modalTitulo').innerText = 'Pedidos de Venta (Nuevo)';
+    document.getElementById('editNoPedido').value = '';
+    document.getElementById('formPedido').reset();
+    document.getElementById('tbodyItems').innerHTML = '';
+    
+    const hoy = new Date().toISOString().split('T')[0];
+    document.getElementById('pedFechaEntrega').value = hoy;
+
+    agregarLineaProducto();
+    
+    const modalEl = document.getElementById('modalPedido');
+    const myModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    myModal.show();
+  }
+
+  function editarPedido(noPedido) {
+    const ped = getPedidosAgrupados().find(p => p.noPedido == noPedido);
+    if (!ped) return;
+
+    document.getElementById('modalTitulo').innerText = `Editar Pedido #${ped.noPedido}`;
+    document.getElementById('editNoPedido').value = ped.noPedido;
+    document.getElementById('pedVendedor').value = ped.vendedor;
+    document.getElementById('pedCliente').value = ped.cliente;
+    document.getElementById('pedFechaEntrega').value = ped.fechaEntrega !== 'Sin fecha' ? ped.fechaEntrega : '';
+    document.getElementById('pedEstatus').value = ped.estatus;
+    document.getElementById('pedTipoPago').value = ped.tipoPago || 'Efectivo';
+    document.getElementById('pedPagado').checked = (ped.pagado || '').toString().toLowerCase() === 'si';
+    document.getElementById('pedComentarios').value = ped.comentarios;
+
+    const tbody = document.getElementById('tbodyItems');
+    tbody.innerHTML = '';
+    ped.items.forEach(item => agregarLineaProducto(item.producto, item.cantidad, item.precio));
+
+    calcularTotalGeneral();
+    const modalEl = document.getElementById('modalPedido');
+    const myModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    myModal.show();
+  }
+
+  function agregarLineaProducto(prodSel = '', cantSel = 1, precioSel = null) {
+    const tbody = document.getElementById('tbodyItems');
+    const tr = document.createElement('tr');
+
+    const preciosMap = DB.listaPrecios || {};
+    let options = '<option value="">-- Seleccionar Producto --</option>';
+    
+    Object.keys(preciosMap).sort().forEach(pName => {
+      const pPrice = preciosMap[pName];
+      const selected = pName === prodSel ? 'selected' : '';
+      options += `<option value="${pName}" data-precio="${pPrice}" ${selected}>${pName}</option>`;
+    });
+
+    const autoPrice = precioSel !== null ? precioSel : (preciosMap[prodSel] || 0);
+
+    tr.innerHTML = `
+      <td>
+        <select class="form-select form-select-sm item-producto" onchange="alCambiarProducto(this)" required>
+          ${options}
+        </select>
+      </td>
+      <td>
+        <input type="number" class="form-control form-control-sm item-cantidad" value="${cantSel}" min="1" oninput="recalcularFila(this)" required>
+      </td>
+      <td>
+        <input type="number" step="0.5" class="form-control form-control-sm item-precio" value="${autoPrice}" oninput="recalcularFila(this)" required>
+      </td>
+      <td class="fw-bold item-total">$${(cantSel * autoPrice).toFixed(2)}</td>
+      <td class="text-center">
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarFila(this)"><i class="bi bi-trash"></i></button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+    calcularTotalGeneral();
+  }
+
+  function alCambiarProducto(selectElem) {
+    const selectedOption = selectElem.options[selectElem.selectedIndex];
+    const precio = parseFloat(selectedOption.getAttribute('data-precio')) || 0;
+    const row = selectElem.closest('tr');
+    row.querySelector('.item-precio').value = precio;
+    recalcularFila(selectElem);
+  }
+
+  function recalcularFila(elem) {
+    const row = elem.closest('tr');
+    const cant = parseFloat(row.querySelector('.item-cantidad').value) || 0;
+    const prec = parseFloat(row.querySelector('.item-precio').value) || 0;
+    row.querySelector('.item-total').innerText = `$${(cant * prec).toFixed(2)}`;
+    calcularTotalGeneral();
+  }
+
+  function eliminarFila(btn) {
+    btn.closest('tr').remove();
+    calcularTotalGeneral();
+  }
+
+  function calcularTotalGeneral() {
+    let grandTotal = 0;
+    document.querySelectorAll('#tbodyItems tr').forEach(tr => {
+      const cant = parseFloat(tr.querySelector('.item-cantidad').value) || 0;
+      const prec = parseFloat(tr.querySelector('.item-precio').value) || 0;
+      grandTotal += (cant * prec);
+    });
+    document.getElementById('lblTotalGeneral').innerText = `$${grandTotal.toFixed(2)}`;
+  }
+
+  function guardarFormularioPedido() {
+    const btnGuardar = document.getElementById('btnGuardar');
+    const cliente = document.getElementById('pedCliente').value.trim();
+    const fechaEntrega = document.getElementById('pedFechaEntrega').value;
+
+    if (!cliente) {
+      alert("Por favor ingrese el nombre del cliente.");
+      return;
+    }
+
+    if (!fechaEntrega) {
+      alert("Por favor seleccione la fecha de entrega.");
+      return;
+    }
+
+    const items = [];
+    document.querySelectorAll('#tbodyItems tr').forEach(tr => {
+      const prod = tr.querySelector('.item-producto').value;
+      const cant = parseFloat(tr.querySelector('.item-cantidad').value) || 0;
+      const prec = parseFloat(tr.querySelector('.item-precio').value) || 0;
+      if (prod && cant > 0) {
+        items.push({ producto: prod, cantidad: cant, precio: prec });
+      }
+    });
+
+    if (items.length === 0) {
+      alert("Debe seleccionar al menos un producto válido.");
+      return;
+    }
+
+    btnGuardar.disabled = true;
+    btnGuardar.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+
+    const payload = {
+      noPedido: document.getElementById('editNoPedido').value ? parseInt(document.getElementById('editNoPedido').value, 10) : null,
+      vendedor: document.getElementById('pedVendedor').value,
+      cliente: cliente,
+      fechaEntrega: fechaEntrega,
+      estatus: document.getElementById('pedEstatus').value,
+      tipoPago: document.getElementById('pedTipoPago').value,
+      pagado: document.getElementById('pedPagado').checked,
+      comentarios: document.getElementById('pedComentarios').value.trim(),
+      items: items
+    };
+
+    google.script.run
+      .withSuccessHandler(() => {
+        btnGuardar.disabled = false;
+        btnGuardar.innerHTML = '<i class="bi bi-save"></i> Guardar Pedido';
+        const modalEl = document.getElementById('modalPedido');
+        const myModal = bootstrap.Modal.getInstance(modalEl);
+        if (myModal) myModal.hide();
+        cargarDatosServidor();
+      })
+      .withFailureHandler(err => {
+        btnGuardar.disabled = false;
+        btnGuardar.innerHTML = '<i class="bi bi-save"></i> Guardar Pedido';
+        alert("Error al guardar: " + err.message);
+      })
+      .guardarPedido(payload);
+  }
+</script>
+</body>
+</html>
