@@ -332,6 +332,11 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
+  // =========================================================================
+  // PEGA AQUÍ LA URL DE TU APLICACIÓN WEB DE GOOGLE APPS SCRIPT
+  // =========================================================================
+  const SCRIPT_URL = "https://script.google.com/macros/s/https://script.google.com/a/macros/salevale.com/s/AKfycbyN1jVSDdp566YRp0DAm-SD169_mfyRitXM1RlfUTYXDC3hDssVZr3BHxtOt16MF1L2/exec/exec";
+
   let DB = { pedidos: [], listaPrecios: {} };
   const NOMBRES_DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
@@ -339,26 +344,27 @@
     cargarDatosServidor();
   });
 
-  function cargarDatosServidor() {
-    google.script.run
-      .withSuccessHandler(res => {
-        if (res) {
-          DB = res;
-          renderizarTablero();
-          renderizarResumen();
-          
-          // Re-consultar requerimientos si la pestaña está activa o tiene fechas
-          const inicio = document.getElementById('reqFechaInicio').value;
-          const fin = document.getElementById('reqFechaFin').value;
-          if (inicio && fin) {
-            consultarRequerimientos();
-          }
+  async function cargarDatosServidor() {
+    try {
+      const response = await fetch(`${SCRIPT_URL}?action=getInitialData`);
+      const res = await response.json();
+
+      if (res.status === "success" && res.data) {
+        DB = res.data;
+        renderizarTablero();
+        renderizarResumen();
+        
+        const inicio = document.getElementById('reqFechaInicio').value;
+        const fin = document.getElementById('reqFechaFin').value;
+        if (inicio && fin) {
+          consultarRequerimientos();
         }
-      })
-      .withFailureHandler(err => {
-        console.error("Error al obtener datos:", err);
-      })
-      .getInitialData();
+      } else {
+        console.error("Error devuelto por el servidor:", res.message);
+      }
+    } catch (err) {
+      console.error("Error al obtener datos:", err);
+    }
   }
 
   function getPedidosAgrupados() {
@@ -509,7 +515,7 @@
     consultarRequerimientos();
   }
 
-  function consultarRequerimientos() {
+  async function consultarRequerimientos() {
     const inicio = document.getElementById('reqFechaInicio').value;
     const fin = document.getElementById('reqFechaFin').value;
 
@@ -528,13 +534,20 @@
     tbody.innerHTML = '<tr><td colspan="100"><div class="spinner-border spinner-border-sm text-primary"></div> Consultando requerimientos de producción...</td></tr>';
     gridComandas.innerHTML = '<div class="col-12 text-muted text-center py-4"><div class="spinner-border spinner-border-sm text-primary"></div> Cargando comandas programadas...</div>';
 
-    google.script.run
-      .withSuccessHandler(renderizarTablaRequerimientos)
-      .withFailureHandler(err => {
-        tbody.innerHTML = `<tr><td colspan="100" class="text-danger">Error: ${err.message}</td></tr>`;
-        gridComandas.innerHTML = `<div class="col-12 text-danger text-center py-4">Error: ${err.message}</div>`;
-      })
-      .getRequerimientosPorPeriodo(inicio, fin);
+    try {
+      const response = await fetch(`${SCRIPT_URL}?action=getRequerimientosPorPeriodo&inicio=${inicio}&fin=${fin}`);
+      const res = await response.json();
+
+      if (res.status === "success" && res.data) {
+        renderizarTablaRequerimientos(res.data);
+      } else {
+        tbody.innerHTML = `<tr><td colspan="100" class="text-danger">Error: ${res.message}</td></tr>`;
+        gridComandas.innerHTML = `<div class="col-12 text-danger text-center py-4">Error: ${res.message}</div>`;
+      }
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="100" class="text-danger">Error de red: ${err.message}</td></tr>`;
+      gridComandas.innerHTML = `<div class="col-12 text-danger text-center py-4">Error de red: ${err.message}</div>`;
+    }
   }
 
   function renderizarTablaRequerimientos(res) {
@@ -554,7 +567,7 @@
       return;
     }
 
-    // 1. Dibuja Encabezados de la Tabla Matriz con Nombre del Día de la Semana
+    // 1. Encabezados de Tabla Matriz
     let headHtml = '<tr><th class="text-start">Producto</th>';
     dias.forEach(dStr => {
       const [year, month, day] = dStr.split('-').map(Number);
@@ -570,7 +583,7 @@
     headHtml += '<th class="text-center bg-secondary">Total Periodo</th></tr>';
     thead.innerHTML = headHtml;
 
-    // 2. Dibuja Filas por Producto
+    // 2. Filas por Producto
     const productos = Object.keys(matriz).sort();
     if (productos.length === 0) {
       tbody.innerHTML = `<tr><td colspan="${dias.length + 2}" class="text-muted p-4"><i class="bi bi-info-circle fs-4 d-block mb-2"></i>No hay pedidos en estado Pendiente, En Proceso o Listo para este periodo.</td></tr>`;
@@ -603,7 +616,7 @@
       tfoot.innerHTML = footHtml;
     }
 
-    // 3. Dibuja la Sección Inferior de Comandas por Día
+    // 3. Comandas por Día
     renderizarComandasPorDia(dias, comandasPorDia);
   }
 
@@ -782,7 +795,7 @@
     document.getElementById('lblTotalGeneral').innerText = `$${grandTotal.toFixed(2)}`;
   }
 
-  function guardarFormularioPedido() {
+  async function guardarFormularioPedido() {
     const btnGuardar = document.getElementById('btnGuardar');
     const cliente = document.getElementById('pedCliente').value.trim();
     const fechaEntrega = document.getElementById('pedFechaEntrega').value;
@@ -827,21 +840,34 @@
       items: items
     };
 
-    google.script.run
-      .withSuccessHandler(() => {
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "guardarPedido",
+          payload: payload
+        })
+      });
+
+      const res = await response.json();
+
+      if (res.status === "success") {
         btnGuardar.disabled = false;
         btnGuardar.innerHTML = '<i class="bi bi-save"></i> Guardar Pedido';
         const modalEl = document.getElementById('modalPedido');
         const myModal = bootstrap.Modal.getInstance(modalEl);
         if (myModal) myModal.hide();
+        
+        // Recargar datos actualizados
         cargarDatosServidor();
-      })
-      .withFailureHandler(err => {
-        btnGuardar.disabled = false;
-        btnGuardar.innerHTML = '<i class="bi bi-save"></i> Guardar Pedido';
-        alert("Error al guardar: " + err.message);
-      })
-      .guardarPedido(payload);
+      } else {
+        throw new Error(res.message);
+      }
+    } catch (err) {
+      btnGuardar.disabled = false;
+      btnGuardar.innerHTML = '<i class="bi bi-save"></i> Guardar Pedido';
+      alert("Error al guardar el pedido: " + err.message);
+    }
   }
 </script>
 </body>
