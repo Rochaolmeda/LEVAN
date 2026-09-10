@@ -44,6 +44,11 @@
 <body>
 
 <div class="container-fluid py-3">
+  <!-- BANNER DE ESTADO DE CONEXIÓN -->
+  <div id="bannerStatus" class="alert alert-warning text-center py-2 d-none mb-3" role="alert">
+    <i class="bi bi-wifi-off"></i> Estás en <strong>Modo Offline</strong>. Los cambios se guardarán localmente y se sincronizarán al recuperar internet.
+  </div>
+
   <!-- ENCABEZADO PRINCIPAL -->
   <div class="header-panel d-flex justify-content-between align-items-center mb-3">
     <div>
@@ -55,7 +60,7 @@
     </button>
   </div>
 
-  <!-- NAVEGACIÓN DE PESTAÑAS (Vistas Separadas) -->
+  <!-- NAVEGACIÓN DE PESTAÑAS -->
   <ul class="nav nav-tabs mb-4" id="mainTab" role="tablist">
     <li class="nav-item" role="presentation">
       <button class="nav-link active" id="kanban-tab" data-bs-toggle="tab" data-bs-target="#tab-kanban" type="button" role="tab" aria-controls="tab-kanban" aria-selected="true">
@@ -335,35 +340,69 @@
   // =========================================================================
   // PEGA AQUÍ LA URL DE TU APLICACIÓN WEB DE GOOGLE APPS SCRIPT
   // =========================================================================
-  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwvgu_UVFBgW_lJjOmzjiqOd72xpvJPMJ2jM0aMplqLSpEYxPbWkPuUcjwNQ0NNFkI7/exec";
+  const SCRIPT_URL = "https://script.google.com/macros/s/TU_SCRIPT_ID_AQUI/exec";
 
   let DB = { pedidos: [], listaPrecios: {} };
   const NOMBRES_DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
+  // REGISTRO DE SERVICE WORKER PARA CARGA OFFLINE
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(() => console.log("Service Worker listo para modo offline"))
+        .catch(err => console.error("Error al registrar SW:", err));
+    });
+  }
+
+  // DETECCIÓN DE CONEXIÓN A INTERNET & SINCRONIZACIÓN
+  window.addEventListener('online', actualizarEstadoConexion);
+  window.addEventListener('offline', actualizarEstadoConexion);
+
+  function actualizarEstadoConexion() {
+    const banner = document.getElementById('bannerStatus');
+    if (navigator.onLine) {
+      if (banner) banner.classList.add('d-none');
+      sincronizarPedidosLocales();
+    } else {
+      if (banner) banner.classList.remove('d-none');
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
+    actualizarEstadoConexion();
     cargarDatosServidor();
   });
 
   async function cargarDatosServidor() {
-    try {
-      const response = await fetch(`${SCRIPT_URL}?action=getInitialData`);
-      const res = await response.json();
+    // 1. Intentar cargar desde el servidor si hay conexión
+    if (navigator.onLine) {
+      try {
+        const response = await fetch(`${SCRIPT_URL}?action=getInitialData`);
+        const res = await response.json();
 
-      if (res.status === "success" && res.data) {
-        DB = res.data;
-        renderizarTablero();
-        renderizarResumen();
-        
-        const inicio = document.getElementById('reqFechaInicio').value;
-        const fin = document.getElementById('reqFechaFin').value;
-        if (inicio && fin) {
-          consultarRequerimientos();
+        if (res.status === "success" && res.data) {
+          DB = res.data;
+          // Guardar copia local en localStorage
+          localStorage.setItem('LEVAN_DB', JSON.stringify(DB));
+          renderizarTablero();
+          renderizarResumen();
+          
+          const inicio = document.getElementById('reqFechaInicio').value;
+          const fin = document.getElementById('reqFechaFin').value;
+          if (inicio && fin) consultarRequerimientos();
+          return;
         }
-      } else {
-        console.error("Error devuelto por el servidor:", res.message);
+      } catch (err) {
+        console.warn("Fallo servidor, cargando copia de localStorage...", err);
       }
-    } catch (err) {
-      console.error("Error al obtener datos:", err);
+    }
+
+    // 2. Si no hay internet o falló el fetch, cargar datos desde localStorage
+    const localData = localStorage.getItem('LEVAN_DB');
+    if (localData) {
+      DB = JSON.parse(localData);
+      renderizarTablero();
+      renderizarResumen();
     }
   }
 
@@ -534,20 +573,64 @@
     tbody.innerHTML = '<tr><td colspan="100"><div class="spinner-border spinner-border-sm text-primary"></div> Consultando requerimientos de producción...</td></tr>';
     gridComandas.innerHTML = '<div class="col-12 text-muted text-center py-4"><div class="spinner-border spinner-border-sm text-primary"></div> Cargando comandas programadas...</div>';
 
-    try {
-      const response = await fetch(`${SCRIPT_URL}?action=getRequerimientosPorPeriodo&inicio=${inicio}&fin=${fin}`);
-      const res = await response.json();
+    if (navigator.onLine) {
+      try {
+        const response = await fetch(`${SCRIPT_URL}?action=getRequerimientosPorPeriodo&inicio=${inicio}&fin=${fin}`);
+        const res = await response.json();
 
-      if (res.status === "success" && res.data) {
-        renderizarTablaRequerimientos(res.data);
-      } else {
-        tbody.innerHTML = `<tr><td colspan="100" class="text-danger">Error: ${res.message}</td></tr>`;
-        gridComandas.innerHTML = `<div class="col-12 text-danger text-center py-4">Error: ${res.message}</div>`;
+        if (res.status === "success" && res.data) {
+          renderizarTablaRequerimientos(res.data);
+          return;
+        }
+      } catch (err) {
+        console.warn("Fallo consulta remota, generando reporte local...", err);
       }
-    } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="100" class="text-danger">Error de red: ${err.message}</td></tr>`;
-      gridComandas.innerHTML = `<div class="col-12 text-danger text-center py-4">Error de red: ${err.message}</div>`;
     }
+
+    // Generar cálculo local offline
+    generarRequerimientosLocal(inicio, fin);
+  }
+
+  function generarRequerimientosLocal(fechaInicioStr, fechaFinStr) {
+    const inicio = new Date(fechaInicioStr + "T00:00:00");
+    const fin = new Date(fechaFinStr + "T23:59:59");
+    const estatusValidos = ["Pendiente", "En Proceso", "Listo"];
+
+    const pedidosAgrupados = getPedidosAgrupados();
+    const pedidosFiltrados = pedidosAgrupados.filter(p => {
+      if (!p.fechaEntrega || !estatusValidos.includes(p.estatus)) return false;
+      const fEntrega = new Date(p.fechaEntrega + "T00:00:00");
+      return fEntrega >= inicio && fEntrega <= fin;
+    });
+
+    const dias = [];
+    let curr = new Date(inicio);
+    while (curr <= fin) {
+      dias.push(curr.toISOString().split('T')[0]);
+      curr.setDate(curr.getDate() + 1);
+    }
+
+    const matriz = {};
+    const comandasPorDia = {};
+    dias.forEach(d => comandasPorDia[d] = []);
+
+    pedidosFiltrados.forEach(p => {
+      const fDia = p.fechaEntrega;
+      if (comandasPorDia[fDia]) comandasPorDia[fDia].push(p);
+
+      p.items.forEach(i => {
+        const prod = i.producto;
+        if (!matriz[prod]) {
+          matriz[prod] = {};
+          dias.forEach(d => matriz[prod][d] = 0);
+        }
+        if (matriz[prod][fDia] !== undefined) {
+          matriz[prod][fDia] += i.cantidad;
+        }
+      });
+    });
+
+    renderizarTablaRequerimientos({ dias, matriz, comandasPorDia });
   }
 
   function renderizarTablaRequerimientos(res) {
@@ -795,18 +878,14 @@
     document.getElementById('lblTotalGeneral').innerText = `$${grandTotal.toFixed(2)}`;
   }
 
+  /* ================= GUARDAR Y SINCRONIZACIÓN OFFLINE ================= */
   async function guardarFormularioPedido() {
     const btnGuardar = document.getElementById('btnGuardar');
     const cliente = document.getElementById('pedCliente').value.trim();
     const fechaEntrega = document.getElementById('pedFechaEntrega').value;
 
-    if (!cliente) {
-      alert("Por favor ingrese el nombre del cliente.");
-      return;
-    }
-
-    if (!fechaEntrega) {
-      alert("Por favor seleccione la fecha de entrega.");
+    if (!cliente || !fechaEntrega) {
+      alert("Por favor ingrese el cliente y la fecha de entrega.");
       return;
     }
 
@@ -815,9 +894,7 @@
       const prod = tr.querySelector('.item-producto').value;
       const cant = parseFloat(tr.querySelector('.item-cantidad').value) || 0;
       const prec = parseFloat(tr.querySelector('.item-precio').value) || 0;
-      if (prod && cant > 0) {
-        items.push({ producto: prod, cantidad: cant, precio: prec });
-      }
+      if (prod && cant > 0) items.push({ producto: prod, cantidad: cant, precio: prec });
     });
 
     if (items.length === 0) {
@@ -828,8 +905,9 @@
     btnGuardar.disabled = true;
     btnGuardar.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
 
+    const editId = document.getElementById('editNoPedido').value;
     const payload = {
-      noPedido: document.getElementById('editNoPedido').value ? parseInt(document.getElementById('editNoPedido').value, 10) : null,
+      noPedido: editId ? parseInt(editId, 10) : null,
       vendedor: document.getElementById('pedVendedor').value,
       cliente: cliente,
       fechaEntrega: fechaEntrega,
@@ -840,34 +918,99 @@
       items: items
     };
 
-    try {
-      const response = await fetch(SCRIPT_URL, {
-        method: "POST",
-        body: JSON.stringify({
-          action: "guardarPedido",
-          payload: payload
-        })
-      });
+    // SI HAY INTERNET: Enviar a Google Apps Script
+    if (navigator.onLine) {
+      try {
+        const response = await fetch(SCRIPT_URL, {
+          method: "POST",
+          body: JSON.stringify({ action: "guardarPedido", payload: payload })
+        });
+        const res = await response.json();
 
-      const res = await response.json();
-
-      if (res.status === "success") {
-        btnGuardar.disabled = false;
-        btnGuardar.innerHTML = '<i class="bi bi-save"></i> Guardar Pedido';
-        const modalEl = document.getElementById('modalPedido');
-        const myModal = bootstrap.Modal.getInstance(modalEl);
-        if (myModal) myModal.hide();
-        
-        // Recargar datos actualizados
-        cargarDatosServidor();
-      } else {
-        throw new Error(res.message);
+        if (res.status === "success") {
+          finalizarGuardado();
+          cargarDatosServidor();
+          return;
+        }
+      } catch (err) {
+        console.warn("Error de red, guardando localmente...", err);
       }
-    } catch (err) {
-      btnGuardar.disabled = false;
-      btnGuardar.innerHTML = '<i class="bi bi-save"></i> Guardar Pedido';
-      alert("Error al guardar el pedido: " + err.message);
     }
+
+    // SI NO HAY INTERNET: Guardar localmente
+    guardarPedidoLocalmente(payload);
+    finalizarGuardado();
+    alert("Sin conexión a internet. El pedido se guardó localmente en tu dispositivo y se enviará automáticamente al conectarte.");
+  }
+
+  function finalizarGuardado() {
+    const btnGuardar = document.getElementById('btnGuardar');
+    btnGuardar.disabled = false;
+    btnGuardar.innerHTML = '<i class="bi bi-save"></i> Guardar Pedido';
+    const modalEl = document.getElementById('modalPedido');
+    const myModal = bootstrap.Modal.getInstance(modalEl);
+    if (myModal) myModal.hide();
+  }
+
+  function guardarPedidoLocalmente(payload) {
+    // 1. Asignar No. Pedido temporal si es nuevo
+    if (!payload.noPedido) {
+      const maxNo = (DB.pedidos || []).reduce((max, p) => Math.max(max, p.noPedido || 0), 999);
+      payload.noPedido = maxNo + 1;
+    } else {
+      // Eliminar pedido anterior si es edición local
+      DB.pedidos = (DB.pedidos || []).filter(p => p.noPedido !== payload.noPedido);
+    }
+
+    // 2. Insertar items en la base local temporal
+    payload.items.forEach(item => {
+      DB.pedidos.push({
+        fechaSolicitud: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        noPedido: payload.noPedido,
+        vendedor: payload.vendedor,
+        cliente: payload.cliente,
+        producto: item.producto,
+        cantidad: item.cantidad,
+        precio: item.precio,
+        comentarios: payload.comentarios,
+        estatus: payload.estatus,
+        pagado: payload.pagado ? "Si" : "No",
+        tipoPago: payload.tipoPago,
+        fechaEntrega: payload.fechaEntrega
+      });
+    });
+
+    // 3. Guardar en cola pendiente de sincronización
+    const colaSincronizar = JSON.parse(localStorage.getItem('LEVAN_COLA_OFFLINE') || '[]');
+    colaSincronizar.push(payload);
+    localStorage.setItem('LEVAN_COLA_OFFLINE', JSON.stringify(colaSincronizar));
+    localStorage.setItem('LEVAN_DB', JSON.stringify(DB));
+
+    renderizarTablero();
+    renderizarResumen();
+  }
+
+  async function sincronizarPedidosLocales() {
+    const cola = JSON.parse(localStorage.getItem('LEVAN_COLA_OFFLINE') || '[]');
+    if (cola.length === 0) return;
+
+    console.log(`Sincronizando ${cola.length} pedidos locales con Google Sheets...`);
+
+    for (const payload of cola) {
+      try {
+        await fetch(SCRIPT_URL, {
+          method: "POST",
+          body: JSON.stringify({ action: "guardarPedido", payload: payload })
+        });
+      } catch (e) {
+        console.error("Error al sincronizar un pedido pendiente:", e);
+        return; // Detener si falla la red de nuevo
+      }
+    }
+
+    // Limpiar la cola local al terminar y recargar
+    localStorage.removeItem('LEVAN_COLA_OFFLINE');
+    cargarDatosServidor();
   }
 </script>
 </body>
